@@ -4695,7 +4695,6 @@ class PowerTraderHub(tk.Tk):
                 "✅ Required permissions:\n"
                 "  • Enable Read Info\n"
                 "  • Enable Spot & Margin Trading\n\n"
-                "If you plan to use Testnet mode, create Testnet API keys on Binance Testnet instead.\n\n"
                 "If you use IP restrictions on your Binance API key, allow the machine running the bot.\n\n"
                 "This wizard will save two files in the same folder as pt_hub.py:\n"
                 "  - b_key.txt    (your API Key)\n"
@@ -4851,15 +4850,6 @@ class PowerTraderHub(tk.Tk):
         ttk.Button(api_row, text="Setup Wizard", command=_open_binance_api_wizard).grid(row=0, column=1, sticky="e", padx=(10, 0))
         ttk.Button(api_row, text="Open Folder", command=_open_api_folder).grid(row=0, column=2, sticky="e", padx=(8, 0))
         ttk.Button(api_row, text="Clear", command=_clear_api_files).grid(row=0, column=3, sticky="e", padx=(8, 0))
-
-        r += 1
-
-        ttk.Label(frm, text="Binance Testnet:").grid(row=r, column=0, sticky="w", padx=(0, 10), pady=6)
-        ttk.Checkbutton(
-            frm,
-            text="Use Binance Testnet (paper trading)",
-            variable=use_testnet_var,
-        ).grid(row=r, column=1, columnspan=2, sticky="w", pady=6)
 
         r += 1
 

@@ -355,8 +355,7 @@ class CryptoAPITrading:
 
         self.api_key = API_KEY
         self.api_secret = API_SECRET
-        self.base_url = "https://testnet.binance.vision" if USE_BINANCE_TESTNET else "https://api.binance.com"
-        self.market_data_url = "https://api.binance.com"
+        self.base_url = "https://api.binance.com"
         self.recv_window = 5000
 
         self.dca_levels_triggered = {}  # Track DCA levels for each crypto
@@ -1122,14 +1121,7 @@ class CryptoAPITrading:
             return {"errors": [{"detail": f"HTTP {response.status_code}: {detail}"}]}
         return data
 
-    def make_api_request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[dict] = None,
-        signed: bool = False,
-        base_url: Optional[str] = None,
-    ) -> Any:
+    def make_api_request(self, method: str, path: str, params: Optional[dict] = None, signed: bool = False) -> Any:
         params = dict(params or {})
         headers = {}
 
@@ -1149,7 +1141,7 @@ class CryptoAPITrading:
         else:
             query = urlencode(params, doseq=True)
 
-        url = f"{base_url or self.base_url}{path}"
+        url = f"{self.base_url}{path}"
         try:
             if method == "GET":
                 if query:
@@ -1362,7 +1354,6 @@ class CryptoAPITrading:
                 "GET",
                 "/api/v3/ticker/bookTicker",
                 params={"symbol": binance_symbol},
-                base_url=self.market_data_url,
             )
 
             if response and isinstance(response, dict) and "askPrice" in response and "bidPrice" in response:
