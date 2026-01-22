@@ -331,6 +331,7 @@ DEFAULT_SETTINGS = {
     "script_neural_trainer": "pt_trainer.py",
     "script_trader": "pt_trader.py",
     "auto_start_scripts": False,
+    "use_binance_testnet": False,
 }
 
 
@@ -4491,6 +4492,7 @@ class PowerTraderHub(tk.Tk):
             _dca_levels = DEFAULT_SETTINGS.get("dca_levels", [])
         dca_levels_var = tk.StringVar(value=",".join(str(x) for x in _dca_levels))
         max_dca_var = tk.StringVar(value=str(self.settings.get("max_dca_buys_per_24h", DEFAULT_SETTINGS.get("max_dca_buys_per_24h", 2))))
+        use_testnet_var = tk.BooleanVar(value=bool(self.settings.get("use_binance_testnet", DEFAULT_SETTINGS.get("use_binance_testnet", False))))
 
         # --- Trailing PM settings (editable; hot-reload friendly) ---
         pm_no_dca_var = tk.StringVar(value=str(self.settings.get("pm_start_pct_no_dca", DEFAULT_SETTINGS.get("pm_start_pct_no_dca", 5.0))))
@@ -4950,6 +4952,7 @@ class PowerTraderHub(tk.Tk):
                 self.settings["chart_refresh_seconds"] = float(chart_refresh_var.get().strip())
                 self.settings["candles_limit"] = int(float(candles_limit_var.get().strip()))
                 self.settings["auto_start_scripts"] = bool(auto_start_var.get())
+                self.settings["use_binance_testnet"] = bool(use_testnet_var.get())
                 self._save_settings()
 
                 # If new coin(s) were added and their training folder doesn't exist yet,

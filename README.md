@@ -128,6 +128,18 @@ PowerTrader AI uses a simple folder style:
 
 ---
 
+## Binance Testnet (paper trading)
+
+If you want to test with real API connections but no real funds:
+
+1. Create Binance **Testnet** API keys.
+2. In the Hub **Settings**, enable **Use Binance Testnet (paper trading)**.
+3. Paste the **Testnet** API Key + Secret in the wizard and click **Save**.
+
+Note: price data still comes from Binance mainnet so signals reflect real markets, while trades execute on Testnet.
+
+---
+
 ## Step 6 — Train (inside the Hub)
 
 Training builds the system’s coin “memory” so it can generate signals.

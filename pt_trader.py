@@ -51,6 +51,7 @@ _gui_settings_cache = {
 	"pm_start_pct_no_dca": 5.0,
 	"pm_start_pct_with_dca": 2.5,
 	"trailing_gap_pct": 0.5,
+	"use_binance_testnet": False,
 }
 
 
@@ -161,6 +162,8 @@ def _load_gui_settings() -> dict:
 		if trailing_gap_pct < 0.0:
 			trailing_gap_pct = 0.0
 
+		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
+
 
 		_gui_settings_cache["mtime"] = mtime
 		_gui_settings_cache["coins"] = coins
@@ -174,6 +177,7 @@ def _load_gui_settings() -> dict:
 		_gui_settings_cache["pm_start_pct_no_dca"] = pm_start_pct_no_dca
 		_gui_settings_cache["pm_start_pct_with_dca"] = pm_start_pct_with_dca
 		_gui_settings_cache["trailing_gap_pct"] = trailing_gap_pct
+		_gui_settings_cache["use_binance_testnet"] = use_binance_testnet
 
 
 		return {
@@ -189,6 +193,7 @@ def _load_gui_settings() -> dict:
 			"pm_start_pct_no_dca": pm_start_pct_no_dca,
 			"pm_start_pct_with_dca": pm_start_pct_with_dca,
 			"trailing_gap_pct": trailing_gap_pct,
+			"use_binance_testnet": use_binance_testnet,
 		}
 
 
@@ -233,6 +238,7 @@ START_ALLOC_PCT = 0.005
 DCA_MULTIPLIER = 2.0
 DCA_LEVELS = [-2.5, -5.0, -10.0, -20.0, -30.0, -40.0, -50.0]
 MAX_DCA_BUYS_PER_24H = 2
+USE_BINANCE_TESTNET = False
 
 # Trailing PM hot-reload globals (defaults match previous hardcoded behavior)
 TRAILING_GAP_PCT = 0.5
@@ -256,7 +262,7 @@ def _refresh_paths_and_symbols():
 	global crypto_symbols, main_dir, base_paths
 	global TRADE_START_LEVEL, START_ALLOC_PCT, DCA_MULTIPLIER, DCA_LEVELS, MAX_DCA_BUYS_PER_24H
 	global TRAILING_GAP_PCT, PM_START_PCT_NO_DCA, PM_START_PCT_WITH_DCA
-	global _last_settings_mtime
+	global USE_BINANCE_TESTNET, _last_settings_mtime
 
 
 	s = _load_gui_settings()
@@ -304,6 +310,8 @@ def _refresh_paths_and_symbols():
 	PM_START_PCT_WITH_DCA = float(s.get("pm_start_pct_with_dca", PM_START_PCT_WITH_DCA) or PM_START_PCT_WITH_DCA)
 	if PM_START_PCT_WITH_DCA < 0.0:
 		PM_START_PCT_WITH_DCA = 0.0
+
+	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
 
 
 	# Keep it safe if folder isn't real on this machine
@@ -1665,6 +1673,10 @@ class CryptoAPITrading:
             self.path_map = dict(base_paths)
             self.dca_levels = list(DCA_LEVELS)
             self.max_dca_buys_per_24h = int(MAX_DCA_BUYS_PER_24H)
+            desired_base_url = "https://testnet.binance.vision" if USE_BINANCE_TESTNET else "https://api.binance.com"
+            if self.base_url != desired_base_url:
+                self.base_url = desired_base_url
+                self.market_data_url = "https://api.binance.com"
 
             # Trailing PM settings (hot-reload)
             old_sig = getattr(self, "_last_trailing_settings_sig", None)
