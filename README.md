@@ -111,6 +111,7 @@ In the Hub, open **Settings** and do this in order:
 
 - **Main Neural Folder**: set this to the same folder that contains `pt_hub.py` (recommended easiest).
 - **Choose which coins to trade**: start with **BTC**.
+- **Choose the Exchange (data/training)**: Binance, KuCoin, or Robinhood (Robinhood uses Binance market candles for training).
 - **While you are still in Settings**, click **Binance API Setup** and do this:
 
 1. Create a Binance API key with **Read Info** + **Spot & Margin Trading** enabled.

@@ -104,6 +104,119 @@ upordown5 = []
 import json
 import uuid
 import os
+import requests
+
+# -----------------------------
+# GUI SETTINGS (exchange selection)
+# -----------------------------
+_GUI_SETTINGS_PATH = os.environ.get("POWERTRADER_GUI_SETTINGS") or os.path.join(
+	os.path.dirname(os.path.abspath(__file__)),
+	"gui_settings.json"
+)
+
+_gui_settings_cache = {
+	"mtime": None,
+	"exchange": "Binance",
+}
+
+_EXCHANGE_WARNED = False
+
+def _load_gui_exchange() -> str:
+	try:
+		if not os.path.isfile(_GUI_SETTINGS_PATH):
+			return _gui_settings_cache["exchange"]
+
+		mtime = os.path.getmtime(_GUI_SETTINGS_PATH)
+		if _gui_settings_cache["mtime"] == mtime:
+			return _gui_settings_cache["exchange"]
+
+		with open(_GUI_SETTINGS_PATH, "r", encoding="utf-8") as f:
+			data = json.load(f) or {}
+
+		exchange = str(data.get("exchange", _gui_settings_cache["exchange"])).strip() or _gui_settings_cache["exchange"]
+		_gui_settings_cache["mtime"] = mtime
+		_gui_settings_cache["exchange"] = exchange
+		return exchange
+	except Exception:
+		return _gui_settings_cache["exchange"]
+
+def _effective_exchange() -> str:
+	exchange = _load_gui_exchange()
+	if exchange.lower() == "robinhood":
+		global _EXCHANGE_WARNED
+		if not _EXCHANGE_WARNED:
+			print("Robinhood historical candles are not available. Falling back to Binance data for training.")
+			_EXCHANGE_WARNED = True
+		return "Binance"
+	return exchange
+
+def _to_binance_symbol(symbol: str) -> str:
+	symbol = symbol.upper().strip()
+	return f"{symbol}USDT" if symbol else ""
+
+def _binance_interval(timeframe: str) -> str:
+	return {
+		"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m",
+		"1hour": "1h", "2hour": "2h", "4hour": "4h", "8hour": "8h", "12hour": "12h",
+		"1day": "1d", "1week": "1w",
+	}.get(timeframe, "1h")
+
+def _get_klines(symbol: str, timeframe: str, start_at: int, end_at: int):
+	exchange = _effective_exchange()
+	if exchange.lower() == "kucoin":
+		try:
+			return market.get_kline(symbol, timeframe, startAt=start_at, endAt=end_at)
+		except Exception:
+			return market.get_kline(symbol, timeframe)
+
+	# Binance
+	try:
+		resp = requests.get(
+			"https://api.binance.com/api/v3/klines",
+			params={
+				"symbol": _to_binance_symbol(symbol.split("-")[0]),
+				"interval": _binance_interval(timeframe),
+				"startTime": start_at * 1000,
+				"endTime": end_at * 1000,
+				"limit": 1000,
+			},
+			timeout=10,
+		)
+		data = resp.json() or []
+		# Convert to KuCoin-like format: [time, open, close, high, low, volume, turnover]
+		klines = []
+		for row in data:
+			ts = int(float(row[0]) / 1000)
+			open_p = row[1]
+			high_p = row[2]
+			low_p = row[3]
+			close_p = row[4]
+			vol = row[5]
+			turnover = row[7] if len(row) > 7 else "0"
+			klines.append([ts, open_p, close_p, high_p, low_p, vol, turnover])
+		return klines
+	except Exception:
+		return []
+
+def _get_ticker(symbol: str):
+	exchange = _effective_exchange()
+	if exchange.lower() == "kucoin":
+		return market.get_ticker(symbol)
+
+	try:
+		resp = requests.get(
+			"https://api.binance.com/api/v3/ticker/bookTicker",
+			params={"symbol": _to_binance_symbol(symbol.split("-")[0])},
+			timeout=10,
+		)
+		data = resp.json() or {}
+		return {
+			"bestAsk": data.get("askPrice", "0"),
+			"bestBid": data.get("bidPrice", "0"),
+			"price": data.get("askPrice", "0"),
+		}
+	except Exception:
+		return {"bestAsk": "0", "bestBid": "0", "price": "0"}
 
 # ---- speed knobs ----
 VERBOSE = False  # set True if you want the old high-volume prints
@@ -410,7 +523,7 @@ while True:
 	while True:
 		time.sleep(.5)
 		try:
-			history = str(market.get_kline(coin_choice,timeframe,startAt=end_time,endAt=start_time)).replace(']]','], ').replace('[[','[').split('], [')
+			history = str(_get_klines(coin_choice, timeframe, end_time, start_time)).replace(']]','], ').replace('[[','[').split('], [')
 		except Exception as e:
 			PrintException()
 			time.sleep(3.5)
@@ -496,7 +609,7 @@ while True:
 		price_list.reverse()
 		high_price_list.reverse()
 		low_price_list.reverse()
-		ticker_data = str(market.get_ticker(coin_choice)).replace('"','').replace("'","").replace("[","").replace("{","").replace("]","").replace("}","").replace(",","").lower().split(' ')
+		ticker_data = str(_get_ticker(coin_choice)).replace('"','').replace("'","").replace("[","").replace("{","").replace("]","").replace("}","").replace(",","").lower().split(' ')
 		price = float(ticker_data[ticker_data.index('price:')+1])
 	except:
 		PrintException()
