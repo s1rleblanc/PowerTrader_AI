@@ -47,7 +47,7 @@ For determining when to sell, the bot uses a trailing profit margin to maximize 
 
 THESE INSTRUCTIONS WERE WRITTEN BY AI! PLEASE LET ME KNOW IF THERE ARE ANY ERRORS OR ISSUES WITH THIS SETUP PROCESS!
 
-If you have any crypto holdings in Robinhood currently, either transfer them out of your Robinhood account or sell them to dollars BEFORE going through this setup process!
+If you have any crypto holdings on Binance currently, make sure your spot account is funded and your API key has the required permissions before going through this setup process.
 
 This page walks you through installing PowerTrader AI from start to finish, in the exact order a first-time user should do it.  
 No coding knowledge needed.  
@@ -103,7 +103,7 @@ This is the only thing you need to run day-to-day.
 
 ---
 
-## Step 5 — Set your folder, coins, and Robinhood keys (inside the Hub)
+## Step 5 — Set your folder, coins, and Binance keys (inside the Hub)
 
 ### Open Settings
 
@@ -111,23 +111,33 @@ In the Hub, open **Settings** and do this in order:
 
 - **Main Neural Folder**: set this to the same folder that contains `pt_hub.py` (recommended easiest).
 - **Choose which coins to trade**: start with **BTC**.
-- **While you are still in Settings**, click **Robinhood API Setup** and do this:
+- **Choose the Exchange (data/training)**: Binance, KuCoin, or Robinhood (Robinhood uses Binance market candles for training).
+- **While you are still in Settings**, click **Binance API Setup** and do this:
 
-1. Click **Generate Keys**.
-2. Copy the **Public Key** shown in the wizard.
-3. On Robinhood, add a new API key and paste that Public Key.
-4. Set permissions to allow trading (the wizard tells you what to select).
-5. Robinhood will show your API Key (often starts with `rh`). Copy it.
-6. Paste the API Key back into the wizard and click **Save**.
-7. Close the wizard and go back to the **Settings** screen.
-8. **NOW** click **Save** in Settings.
+1. Create a Binance API key with **Read Info** + **Spot & Margin Trading** enabled.
+2. Copy the **API Key** and **Secret Key** from Binance.
+3. Paste both keys into the wizard and click **Save**.
+4. Close the wizard and go back to the **Settings** screen.
+5. **NOW** click **Save** in Settings.
 
 After saving, you will have two files in your PowerTrader AI folder:  
-`r_key.txt` and `r_secret.txt`  
+`b_key.txt` and `b_secret.txt`  
 Keep them private.
 
 PowerTrader AI uses a simple folder style:  
 **BTC uses the main folder**, and other coins use their own subfolders (like `ETH\`).
+
+---
+
+## Binance Testnet (paper trading)
+
+If you want to test with real API connections but no real funds:
+
+1. Create Binance **Testnet** API keys.
+2. In the Hub **Settings**, enable **Use Binance Testnet (paper trading)**.
+3. Paste the **Testnet** API Key + Secret in the wizard and click **Save**.
+
+Note: price data still comes from Binance mainnet so signals reflect real markets, while trades execute on Testnet.
 
 ---
 
