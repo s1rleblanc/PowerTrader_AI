@@ -84,6 +84,8 @@ def _load_gui_settings() -> dict:
 		coins = [str(c).strip().upper() for c in coins if str(c).strip()]
 		if not coins:
 			coins = list(_gui_settings_cache["coins"])
+		default_coins = list(_gui_settings_cache["coins"])
+		coins = default_coins + [c for c in coins if c not in default_coins]
 
 		main_neural_dir = data.get("main_neural_dir", None)
 		if isinstance(main_neural_dir, str):
@@ -163,6 +165,9 @@ def _load_gui_settings() -> dict:
 			trailing_gap_pct = 0.0
 
 		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
+		exchange = str(data.get("exchange", _gui_settings_cache.get("exchange", "Binance"))).strip() or "Binance"
+
+		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
 
 
 		_gui_settings_cache["mtime"] = mtime
@@ -228,7 +233,7 @@ def _build_base_paths(main_dir_in: str, coins_in: list) -> dict:
 
 
 # Live globals (will be refreshed inside manage_trades())
-crypto_symbols = ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE']
+crypto_symbols = ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE', 'BCH']
 
 # Default main_dir behavior if settings are missing
 main_dir = os.getcwd()
@@ -310,6 +315,9 @@ def _refresh_paths_and_symbols():
 	PM_START_PCT_WITH_DCA = float(s.get("pm_start_pct_with_dca", PM_START_PCT_WITH_DCA) or PM_START_PCT_WITH_DCA)
 	if PM_START_PCT_WITH_DCA < 0.0:
 		PM_START_PCT_WITH_DCA = 0.0
+
+	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
+	EXCHANGE = str(s.get("exchange", EXCHANGE) or EXCHANGE).strip() or EXCHANGE
 
 	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
 
