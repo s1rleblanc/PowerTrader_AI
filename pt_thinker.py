@@ -70,56 +70,6 @@ def binance_current_ask(symbol: str) -> float:
     return _BN_MD.get_current_ask(symbol)
 
 
-def kucoin_current_ask(symbol: str) -> float:
-    """Returns KuCoin current BUY price (bestAsk) for symbols like 'BTC-USD'."""
-    base = (symbol or "").split("-")[0].strip().upper()
-    if not base:
-        raise RuntimeError("Missing symbol for KuCoin ask lookup.")
-    pair = f"{base}-USDT"
-    data = market.get_ticker(pair)
-    try:
-        return float(data.get("bestAsk") or data.get("price") or 0.0)
-    except Exception as e:
-        raise RuntimeError(f"KuCoin ticker missing bestAsk for {pair}: {e}")
-
-
-def _get_exchange() -> str:
-    exchange = _load_gui_exchange().strip() or "KuCoin"
-    if exchange.lower() == "robinhood":
-        return "Robinhood"
-    if exchange.lower() == "binance":
-        return "Binance"
-    return "KuCoin"
-
-
-def _get_klines(exchange: str, symbol: str, timeframe: str):
-    if exchange == "KuCoin":
-        return market.get_kline(symbol, timeframe)
-
-    if exchange == "Binance":
-        binance_symbol = _to_binance_symbol(symbol.replace("-USDT", "-USD"))
-        resp = requests.get(
-            f"{BINANCE_BASE_URL}/api/v3/klines",
-            params={"symbol": binance_symbol, "interval": _BINANCE_INTERVAL_MAP.get(timeframe, "1h"), "limit": 300},
-            timeout=10,
-        )
-        data = resp.json() or []
-        klines = []
-        for row in data:
-            ts = int(float(row[0]) / 1000)
-            open_p = row[1]
-            high_p = row[2]
-            low_p = row[3]
-            close_p = row[4]
-            vol = row[5]
-            turnover = row[7] if len(row) > 7 else "0"
-            klines.append([ts, open_p, close_p, high_p, low_p, vol, turnover])
-        return klines
-
-    # Robinhood fallback (no public candles)
-    return _get_klines("Binance", symbol, timeframe)
-
-
 def restart_program():
 	"""Restarts the current program (no CLI args; uses hardcoded COIN_SYMBOLS)."""
 	try:
@@ -748,17 +698,11 @@ def step_coin(sym: str):
 		# reset tf_update for this coin (but DO NOT block-wait; just detect updates and return)
 		tf_update = ['no'] * len(tf_choices)
 
-		# get current price ONCE per coin — use selected exchange
+		# get current price ONCE per coin — use Binance current ASK
 		market_symbol = f"{sym}-USD"
-		exchange = _get_exchange()
 		while True:
 			try:
-				if exchange == "Binance":
-					current = binance_current_ask(market_symbol)
-				elif exchange == "KuCoin":
-					current = kucoin_current_ask(market_symbol)
-				else:
-					current = binance_current_ask(market_symbol)
+				current = binance_current_ask(market_symbol)
 				break
 			except Exception as e:
 				print(e)
