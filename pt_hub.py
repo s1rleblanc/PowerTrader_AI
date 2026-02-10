@@ -305,7 +305,8 @@ class NeuralSignalTile(ttk.Frame):
 
 DEFAULT_SETTINGS = {
     "main_neural_dir": "",
-    "coins": ["BTC", "ETH", "XRP", "BNB", "DOGE"],
+    "coins": ["BTC", "ETH", "XRP", "BNB", "DOGE", "BCH"],
+    "exchange": "Binance",
     "trade_start_level": 3,  # trade starts when long signal >= this level (1..7)
     "start_allocation_pct": 0.005,  # % of total account value for initial entry (min $0.50 per coin)
     "dca_multiplier": 2.0,  # DCA buy size = current value * this (2.0 => total scales ~3x per DCA)
@@ -572,11 +573,25 @@ def read_short_signal(folder: str) -> int:
 # Candle fetching (KuCoin)
 # -----------------------------
 
+_TF_SECONDS = {
+    "1min": 60, "5min": 300, "15min": 900, "30min": 1800,
+    "1hour": 3600, "2hour": 7200, "4hour": 14400, "8hour": 28800, "12hour": 43200,
+    "1day": 86400, "1week": 604800,
+}
+
+_BINANCE_INTERVAL_MAP = {
+    "1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m",
+    "1hour": "1h", "2hour": "2h", "4hour": "4h", "8hour": "8h", "12hour": "12h",
+    "1day": "1d", "1week": "1w",
+}
+
+
 class CandleFetcher:
     """
-    Uses kucoin-python if available; otherwise falls back to KuCoin REST via requests.
+    Candle fetcher supporting KuCoin and Binance. Robinhood falls back to Binance data.
     """
-    def __init__(self):
+    def __init__(self, settings_getter):
+        self._settings_getter = settings_getter
         self._mode = "kucoin_client"
         self._market = None
         try:
@@ -586,14 +601,27 @@ class CandleFetcher:
             self._mode = "rest"
             self._market = None
 
-        if self._mode == "rest":
-            import requests  # local import
-            self._requests = requests
+        import requests  # local import
+        self._requests = requests
 
         # Small in-memory cache to keep timeframe switching snappy.
-        # key: (pair, timeframe, limit) -> (saved_time_epoch, candles)
-        self._cache: Dict[Tuple[str, str, int], Tuple[float, List[dict]]] = {}
+        # key: (exchange, pair, timeframe, limit) -> (saved_time_epoch, candles)
+        self._cache: Dict[Tuple[str, str, str, int], Tuple[float, List[dict]]] = {}
         self._cache_ttl_seconds: float = 10.0
+
+    def _get_exchange(self) -> str:
+        try:
+            exchange = str(self._settings_getter().get("exchange", "Binance")).strip()
+            return exchange or "Binance"
+        except Exception:
+            return "Binance"
+
+    @staticmethod
+    def _to_binance_symbol(symbol: str) -> str:
+        symbol = symbol.upper().strip()
+        if not symbol:
+            return ""
+        return f"{symbol}USDT"
 
 
     def get_klines(self, symbol: str, timeframe: str, limit: int = 120) -> List[dict]:
@@ -603,27 +631,24 @@ class CandleFetcher:
         """
         symbol = symbol.upper().strip()
 
+        exchange = self._get_exchange()
         # Your neural uses USDT pairs on KuCoin (ex: BTC-USDT)
         pair = f"{symbol}-USDT"
         limit = int(limit or 0)
 
         now = time.time()
-        cache_key = (pair, timeframe, limit)
+        cache_key = (exchange, pair, timeframe, limit)
         cached = self._cache.get(cache_key)
         if cached and (now - float(cached[0])) <= float(self._cache_ttl_seconds):
             return cached[1]
 
         # rough window (timeframe-dependent) so we get enough candles
-        tf_seconds = {
-            "1min": 60, "5min": 300, "15min": 900, "30min": 1800,
-            "1hour": 3600, "2hour": 7200, "4hour": 14400, "8hour": 28800, "12hour": 43200,
-            "1day": 86400, "1week": 604800
-        }.get(timeframe, 3600)
+        tf_seconds = _TF_SECONDS.get(timeframe, 3600)
 
         end_at = int(now)
         start_at = end_at - (tf_seconds * max(200, (limit + 50) if limit else 250))
 
-        if self._mode == "kucoin_client" and self._market is not None:
+        if exchange.lower() == "kucoin" and self._mode == "kucoin_client" and self._market is not None:
             try:
                 # IMPORTANT: limit the server response by passing startAt/endAt.
                 # This avoids downloading a huge default kline set every switch.
@@ -649,22 +674,50 @@ class CandleFetcher:
             except Exception:
                 return []
 
-        # REST fallback
+        if exchange.lower() == "kucoin":
+            # REST fallback
+            try:
+                url = "https://api.kucoin.com/api/v1/market/candles"
+                params = {"symbol": pair, "type": timeframe, "startAt": start_at, "endAt": end_at}
+                resp = self._requests.get(url, params=params, timeout=10)
+                j = resp.json()
+                data = j.get("data", [])  # newest->oldest
+                candles: List[dict] = []
+                for row in data:
+                    ts = int(float(row[0]))
+                    o = float(row[1]); c = float(row[2]); h = float(row[3]); l = float(row[4])
+                    candles.append({"ts": ts, "open": o, "high": h, "low": l, "close": c})
+                candles.sort(key=lambda x: x["ts"])
+                if limit and len(candles) > limit:
+                    candles = candles[-limit:]
+
+                self._cache[cache_key] = (now, candles)
+                return candles
+            except Exception:
+                return []
+
+        # Binance (and Robinhood fallback)
         try:
-            url = "https://api.kucoin.com/api/v1/market/candles"
-            params = {"symbol": pair, "type": timeframe, "startAt": start_at, "endAt": end_at}
+            binance_symbol = self._to_binance_symbol(symbol)
+            interval = _BINANCE_INTERVAL_MAP.get(timeframe, "1h")
+            url = "https://api.binance.com/api/v3/klines"
+            params = {
+                "symbol": binance_symbol,
+                "interval": interval,
+                "startTime": start_at * 1000,
+                "endTime": end_at * 1000,
+                "limit": max(1, min(int(limit or 200), 1000)),
+            }
             resp = self._requests.get(url, params=params, timeout=10)
-            j = resp.json()
-            data = j.get("data", [])  # newest->oldest
+            data = resp.json() or []
             candles: List[dict] = []
             for row in data:
-                ts = int(float(row[0]))
-                o = float(row[1]); c = float(row[2]); h = float(row[3]); l = float(row[4])
+                ts = int(float(row[0]) / 1000)
+                o = float(row[1]); h = float(row[2]); l = float(row[3]); c = float(row[4])
                 candles.append({"ts": ts, "open": o, "high": h, "low": l, "close": c})
             candles.sort(key=lambda x: x["ts"])
             if limit and len(candles) > limit:
                 candles = candles[-limit:]
-
             self._cache[cache_key] = (now, candles)
             return candles
         except Exception:
@@ -1623,10 +1676,7 @@ class PowerTraderHub(tk.Tk):
         # trainers: coin -> LogProc
         self.trainers: Dict[str, LogProc] = {}
 
-        self.fetcher = CandleFetcher()
-
-
-        self.fetcher = CandleFetcher()
+        self.fetcher = CandleFetcher(self._settings_getter)
 
         self._build_menu()
         self._build_layout()
@@ -1888,7 +1938,10 @@ class PowerTraderHub(tk.Tk):
         merged = dict(DEFAULT_SETTINGS)
         merged.update(data)
         # normalize
-        merged["coins"] = [c.upper().strip() for c in merged.get("coins", [])]
+        default_coins = [c.upper().strip() for c in DEFAULT_SETTINGS.get("coins", [])]
+        saved_coins = [c.upper().strip() for c in merged.get("coins", [])]
+        merged["coins"] = default_coins + [c for c in saved_coins if c and c not in default_coins]
+        merged["exchange"] = str(merged.get("exchange", DEFAULT_SETTINGS.get("exchange", "Binance"))).strip() or "Binance"
         return merged
 
     def _save_settings(self) -> None:
@@ -4566,6 +4619,16 @@ class PowerTraderHub(tk.Tk):
         add_row(r, "DCA multiplier:", dca_mult_var); r += 1
 
         add_row(r, "Max DCA buys / coin (rolling 24h):", max_dca_var); r += 1
+
+        ttk.Label(frm, text="Exchange (data/training):").grid(row=r, column=0, sticky="w", padx=(0, 10), pady=6)
+        exchange_combo = ttk.Combobox(
+            frm,
+            textvariable=exchange_var,
+            values=["Binance", "KuCoin", "Robinhood"],
+            state="readonly",
+        )
+        exchange_combo.grid(row=r, column=1, sticky="ew", pady=6)
+        r += 1
 
         add_row(r, "Trailing PM start % (no DCA):", pm_no_dca_var); r += 1
         add_row(r, "Trailing PM start % (with DCA):", pm_with_dca_var); r += 1

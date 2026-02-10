@@ -21,6 +21,11 @@ import uuid
 #   use result["askPrice"]
 # -----------------------------
 BINANCE_BASE_URL = "https://api.binance.com"
+_BINANCE_INTERVAL_MAP = {
+    "1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m",
+    "1hour": "1h", "2hour": "2h", "4hour": "4h", "8hour": "8h", "12hour": "12h",
+    "1day": "1d", "1week": "1w",
+}
 
 _BN_MD = None  # lazy-init shared session
 
@@ -105,21 +110,22 @@ _GUI_SETTINGS_PATH = os.environ.get("POWERTRADER_GUI_SETTINGS") or os.path.join(
 
 _gui_settings_cache = {
 	"mtime": None,
-	"coins": ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE'],  # fallback defaults
+	"coins": ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE', 'BCH'],  # fallback defaults
+	"exchange": "Binance",
 }
 
-def _load_gui_coins() -> list:
+def _load_gui_settings() -> dict:
 	"""
-	Reads gui_settings.json and returns settings["coins"] as an uppercased list.
+	Reads gui_settings.json and returns settings with coins + exchange.
 	Caches by mtime so it is cheap to call frequently.
 	"""
 	try:
 		if not os.path.isfile(_GUI_SETTINGS_PATH):
-			return list(_gui_settings_cache["coins"])
+			return dict(_gui_settings_cache)
 
 		mtime = os.path.getmtime(_GUI_SETTINGS_PATH)
 		if _gui_settings_cache["mtime"] == mtime:
-			return list(_gui_settings_cache["coins"])
+			return dict(_gui_settings_cache)
 
 		with open(_GUI_SETTINGS_PATH, "r", encoding="utf-8") as f:
 			data = json.load(f) or {}
@@ -131,12 +137,23 @@ def _load_gui_coins() -> list:
 		coins = [str(c).strip().upper() for c in coins if str(c).strip()]
 		if not coins:
 			coins = list(_gui_settings_cache["coins"])
+		default_coins = list(_gui_settings_cache["coins"])
+		coins = default_coins + [c for c in coins if c not in default_coins]
+
+		exchange = str(data.get("exchange", _gui_settings_cache["exchange"])).strip() or _gui_settings_cache["exchange"]
 
 		_gui_settings_cache["mtime"] = mtime
 		_gui_settings_cache["coins"] = coins
-		return list(coins)
+		_gui_settings_cache["exchange"] = exchange
+		return dict(_gui_settings_cache)
 	except Exception:
-		return list(_gui_settings_cache["coins"])
+		return dict(_gui_settings_cache)
+
+def _load_gui_coins() -> list:
+	return list(_load_gui_settings().get("coins", _gui_settings_cache["coins"]))
+
+def _load_gui_exchange() -> str:
+	return str(_load_gui_settings().get("exchange", _gui_settings_cache["exchange"]))
 
 # Initial coin list (will be kept live via _sync_coins_from_settings())
 COIN_SYMBOLS = _load_gui_coins()
@@ -340,13 +357,14 @@ def init_coin(sym: str):
 	st = new_coin_state()
 
 	coin = sym + '-USDT'
+	exchange = _get_exchange()
 	ind = 0
 	tf_times_local = []
 	while True:
 		history_list = []
 		while True:
 			try:
-				history = str(market.get_kline(coin, tf_choices[ind])).replace(']]', '], ').replace('[[', '[')
+				history = str(_get_klines(exchange, coin, tf_choices[ind])).replace(']]', '], ').replace('[[', '[')
 				break
 			except Exception as e:
 				time.sleep(3.5)
@@ -427,6 +445,7 @@ def step_coin(sym: str):
 	# run inside the coin folder so all existing file reads/writes stay relative + isolated
 	os.chdir(coin_folder(sym))
 	coin = sym + '-USDT'
+	exchange = _get_exchange()
 	st = states[sym]
 
 	# --- training freshness gate ---
@@ -502,7 +521,7 @@ def step_coin(sym: str):
 		history_list = []
 		while True:
 			try:
-				history = str(market.get_kline(coin, tf_choices[tf_choice_index])).replace(']]', '], ').replace('[[', '[')
+				history = str(_get_klines(exchange, coin, tf_choices[tf_choice_index])).replace(']]', '], ').replace('[[', '[')
 				break
 			except Exception as e:
 				time.sleep(3.5)
@@ -730,7 +749,7 @@ def step_coin(sym: str):
 			while True:
 
 				try:
-					history = str(market.get_kline(coin, tf_choices[inder])).replace(']]', '], ').replace('[[', '[')
+					history = str(_get_klines(exchange, coin, tf_choices[inder])).replace(']]', '], ').replace('[[', '[')
 					break
 				except Exception as e:
 					time.sleep(3.5)
@@ -988,7 +1007,7 @@ def step_coin(sym: str):
 		while this_index_now < len(tf_update):
 			while True:
 				try:
-					history = str(market.get_kline(coin, tf_choices[this_index_now])).replace(']]', '], ').replace('[[', '[')
+					history = str(_get_klines(exchange, coin, tf_choices[this_index_now])).replace(']]', '], ').replace('[[', '[')
 					break
 				except Exception as e:
 					time.sleep(3.5)
