@@ -8,112 +8,116 @@ import sys
 import datetime
 import traceback
 import linecache
-import base64
 import calendar
-import hashlib
-import hmac
 from datetime import datetime
 import psutil
 import logging
 import json
 import uuid
 
-from nacl.signing import SigningKey
-
 # -----------------------------
-# Robinhood market-data (current ASK), same source as rhcb.py trader:
-#   GET /api/v1/crypto/marketdata/best_bid_ask/?symbol=BTC-USD
-#   use result["ask_inclusive_of_buy_spread"]
+# Binance market-data (current ASK):
+#   GET /api/v3/ticker/bookTicker?symbol=BTCUSDT
+#   use result["askPrice"]
 # -----------------------------
-ROBINHOOD_BASE_URL = "https://trading.robinhood.com"
+BINANCE_BASE_URL = "https://api.binance.com"
+_BINANCE_INTERVAL_MAP = {
+    "1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m",
+    "1hour": "1h", "2hour": "2h", "4hour": "4h", "8hour": "8h", "12hour": "12h",
+    "1day": "1d", "1week": "1w",
+}
 
-_RH_MD = None  # lazy-init so import doesn't explode if creds missing
+_BN_MD = None  # lazy-init shared session
 
 
-class RobinhoodMarketData:
-    def __init__(self, api_key: str, base64_private_key: str, base_url: str = ROBINHOOD_BASE_URL, timeout: int = 10):
-        self.api_key = (api_key or "").strip()
+def _to_binance_symbol(symbol: str) -> str:
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        return ""
+    if "-" not in symbol:
+        return symbol
+    base, quote = symbol.split("-", 1)
+    if quote in ("USD", "USDT"):
+        return f"{base}USDT"
+    return f"{base}{quote}"
+
+
+class BinanceMarketData:
+    def __init__(self, base_url: str = BINANCE_BASE_URL, timeout: int = 10):
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
-
-        if not self.api_key:
-            raise RuntimeError("Robinhood API key is empty (r_key.txt).")
-
-        try:
-            raw_private = base64.b64decode((base64_private_key or "").strip())
-            self.private_key = SigningKey(raw_private)
-        except Exception as e:
-            raise RuntimeError(f"Failed to decode Robinhood private key (r_secret.txt): {e}")
-
         self.session = requests.Session()
 
-    def _get_current_timestamp(self) -> int:
-        return int(time.time())
-
-    def _get_authorization_header(self, method: str, path: str, body: str, timestamp: int) -> dict:
-        # matches the trader's signing format
-        method = method.upper()
-        body = body or ""
-        message_to_sign = f"{self.api_key}{timestamp}{path}{method}{body}"
-        signed = self.private_key.sign(message_to_sign.encode("utf-8"))
-        signature_b64 = base64.b64encode(signed.signature).decode("utf-8")
-
-        return {
-            "x-api-key": self.api_key,
-            "x-timestamp": str(timestamp),
-            "x-signature": signature_b64,
-            "Content-Type": "application/json",
-        }
-
-    def make_api_request(self, method: str, path: str, body: str = "") -> dict:
-        url = f"{self.base_url}{path}"
-        ts = self._get_current_timestamp()
-        headers = self._get_authorization_header(method, path, body, ts)
-
-        resp = self.session.request(method=method.upper(), url=url, headers=headers, data=body or None, timeout=self.timeout)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"Robinhood HTTP {resp.status_code}: {resp.text}")
-        return resp.json()
-
     def get_current_ask(self, symbol: str) -> float:
-        symbol = (symbol or "").strip().upper()
-        path = f"/api/v1/crypto/marketdata/best_bid_ask/?symbol={symbol}"
-        data = self.make_api_request("GET", path)
-
-        if not data or "results" not in data or not data["results"]:
-            raise RuntimeError(f"Robinhood best_bid_ask returned no results for {symbol}: {data}")
-
-        result = data["results"][0]
-        # EXACTLY like rhcb.py's get_price(): ask_inclusive_of_buy_spread
-        return float(result["ask_inclusive_of_buy_spread"])
-
-
-def robinhood_current_ask(symbol: str) -> float:
-    """
-    Returns Robinhood current BUY price (ask_inclusive_of_buy_spread) for symbols like 'BTC-USD'.
-    Reads creds from r_key.txt and r_secret.txt in the same folder as this script.
-    """
-    global _RH_MD
-    if _RH_MD is None:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        key_path = os.path.join(base_dir, "r_key.txt")
-        secret_path = os.path.join(base_dir, "r_secret.txt")
-
-        if not os.path.isfile(key_path) or not os.path.isfile(secret_path):
-            raise RuntimeError(
-                "Missing r_key.txt and/or r_secret.txt next to pt_thinker.py. "
-                "Run pt_trader.py once to create them (and to set your Robinhood API key)."
-            )
+        binance_symbol = _to_binance_symbol(symbol)
+        if not binance_symbol:
+            raise RuntimeError("Missing symbol for Binance ask lookup.")
+        url = f"{self.base_url}/api/v3/ticker/bookTicker"
+        resp = self.session.get(url, params={"symbol": binance_symbol}, timeout=self.timeout)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Binance HTTP {resp.status_code}: {resp.text}")
+        data = resp.json() or {}
+        if "askPrice" not in data:
+            raise RuntimeError(f"Binance bookTicker returned no askPrice for {binance_symbol}: {data}")
+        return float(data["askPrice"])
 
 
-        with open(key_path, "r", encoding="utf-8") as f:
-            api_key = f.read()
-        with open(secret_path, "r", encoding="utf-8") as f:
-            priv_b64 = f.read()
+def binance_current_ask(symbol: str) -> float:
+    """Returns Binance current BUY price (askPrice) for symbols like 'BTC-USD'."""
+    global _BN_MD
+    if _BN_MD is None:
+        _BN_MD = BinanceMarketData()
+    return _BN_MD.get_current_ask(symbol)
 
-        _RH_MD = RobinhoodMarketData(api_key=api_key, base64_private_key=priv_b64)
 
-    return _RH_MD.get_current_ask(symbol)
+def kucoin_current_ask(symbol: str) -> float:
+    """Returns KuCoin current BUY price (bestAsk) for symbols like 'BTC-USD'."""
+    base = (symbol or "").split("-")[0].strip().upper()
+    if not base:
+        raise RuntimeError("Missing symbol for KuCoin ask lookup.")
+    pair = f"{base}-USDT"
+    data = market.get_ticker(pair)
+    try:
+        return float(data.get("bestAsk") or data.get("price") or 0.0)
+    except Exception as e:
+        raise RuntimeError(f"KuCoin ticker missing bestAsk for {pair}: {e}")
+
+
+def _get_exchange() -> str:
+    exchange = _load_gui_exchange().strip() or "KuCoin"
+    if exchange.lower() == "robinhood":
+        return "Robinhood"
+    if exchange.lower() == "binance":
+        return "Binance"
+    return "KuCoin"
+
+
+def _get_klines(exchange: str, symbol: str, timeframe: str):
+    if exchange == "KuCoin":
+        return market.get_kline(symbol, timeframe)
+
+    if exchange == "Binance":
+        binance_symbol = _to_binance_symbol(symbol.replace("-USDT", "-USD"))
+        resp = requests.get(
+            f"{BINANCE_BASE_URL}/api/v3/klines",
+            params={"symbol": binance_symbol, "interval": _BINANCE_INTERVAL_MAP.get(timeframe, "1h"), "limit": 300},
+            timeout=10,
+        )
+        data = resp.json() or []
+        klines = []
+        for row in data:
+            ts = int(float(row[0]) / 1000)
+            open_p = row[1]
+            high_p = row[2]
+            low_p = row[3]
+            close_p = row[4]
+            vol = row[5]
+            turnover = row[7] if len(row) > 7 else "0"
+            klines.append([ts, open_p, close_p, high_p, low_p, vol, turnover])
+        return klines
+
+    # Robinhood fallback (no public candles)
+    return _get_klines("Binance", symbol, timeframe)
 
 
 def restart_program():
@@ -156,21 +160,22 @@ _GUI_SETTINGS_PATH = os.environ.get("POWERTRADER_GUI_SETTINGS") or os.path.join(
 
 _gui_settings_cache = {
 	"mtime": None,
-	"coins": ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE'],  # fallback defaults
+	"coins": ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE', 'BCH'],  # fallback defaults
+	"exchange": "Binance",
 }
 
-def _load_gui_coins() -> list:
+def _load_gui_settings() -> dict:
 	"""
-	Reads gui_settings.json and returns settings["coins"] as an uppercased list.
+	Reads gui_settings.json and returns settings with coins + exchange.
 	Caches by mtime so it is cheap to call frequently.
 	"""
 	try:
 		if not os.path.isfile(_GUI_SETTINGS_PATH):
-			return list(_gui_settings_cache["coins"])
+			return dict(_gui_settings_cache)
 
 		mtime = os.path.getmtime(_GUI_SETTINGS_PATH)
 		if _gui_settings_cache["mtime"] == mtime:
-			return list(_gui_settings_cache["coins"])
+			return dict(_gui_settings_cache)
 
 		with open(_GUI_SETTINGS_PATH, "r", encoding="utf-8") as f:
 			data = json.load(f) or {}
@@ -182,12 +187,23 @@ def _load_gui_coins() -> list:
 		coins = [str(c).strip().upper() for c in coins if str(c).strip()]
 		if not coins:
 			coins = list(_gui_settings_cache["coins"])
+		default_coins = list(_gui_settings_cache["coins"])
+		coins = default_coins + [c for c in coins if c not in default_coins]
+
+		exchange = str(data.get("exchange", _gui_settings_cache["exchange"])).strip() or _gui_settings_cache["exchange"]
 
 		_gui_settings_cache["mtime"] = mtime
 		_gui_settings_cache["coins"] = coins
-		return list(coins)
+		_gui_settings_cache["exchange"] = exchange
+		return dict(_gui_settings_cache)
 	except Exception:
-		return list(_gui_settings_cache["coins"])
+		return dict(_gui_settings_cache)
+
+def _load_gui_coins() -> list:
+	return list(_load_gui_settings().get("coins", _gui_settings_cache["coins"]))
+
+def _load_gui_exchange() -> str:
+	return str(_load_gui_settings().get("exchange", _gui_settings_cache["exchange"]))
 
 # Initial coin list (will be kept live via _sync_coins_from_settings())
 COIN_SYMBOLS = _load_gui_coins()
@@ -391,13 +407,14 @@ def init_coin(sym: str):
 	st = new_coin_state()
 
 	coin = sym + '-USDT'
+	exchange = _get_exchange()
 	ind = 0
 	tf_times_local = []
 	while True:
 		history_list = []
 		while True:
 			try:
-				history = str(market.get_kline(coin, tf_choices[ind])).replace(']]', '], ').replace('[[', '[')
+				history = str(_get_klines(exchange, coin, tf_choices[ind])).replace(']]', '], ').replace('[[', '[')
 				break
 			except Exception as e:
 				time.sleep(3.5)
@@ -478,6 +495,7 @@ def step_coin(sym: str):
 	# run inside the coin folder so all existing file reads/writes stay relative + isolated
 	os.chdir(coin_folder(sym))
 	coin = sym + '-USDT'
+	exchange = _get_exchange()
 	st = states[sym]
 
 	# --- training freshness gate ---
@@ -553,7 +571,7 @@ def step_coin(sym: str):
 		history_list = []
 		while True:
 			try:
-				history = str(market.get_kline(coin, tf_choices[tf_choice_index])).replace(']]', '], ').replace('[[', '[')
+				history = str(_get_klines(exchange, coin, tf_choices[tf_choice_index])).replace(']]', '], ').replace('[[', '[')
 				break
 			except Exception as e:
 				time.sleep(3.5)
@@ -730,11 +748,17 @@ def step_coin(sym: str):
 		# reset tf_update for this coin (but DO NOT block-wait; just detect updates and return)
 		tf_update = ['no'] * len(tf_choices)
 
-		# get current price ONCE per coin — use Robinhood's current ASK (same as rhcb trader buy price)
-		rh_symbol = f"{sym}-USD"
+		# get current price ONCE per coin — use selected exchange
+		market_symbol = f"{sym}-USD"
+		exchange = _get_exchange()
 		while True:
 			try:
-				current = robinhood_current_ask(rh_symbol)
+				if exchange == "Binance":
+					current = binance_current_ask(market_symbol)
+				elif exchange == "KuCoin":
+					current = kucoin_current_ask(market_symbol)
+				else:
+					current = binance_current_ask(market_symbol)
 				break
 			except Exception as e:
 				print(e)
@@ -781,7 +805,7 @@ def step_coin(sym: str):
 			while True:
 
 				try:
-					history = str(market.get_kline(coin, tf_choices[inder])).replace(']]', '], ').replace('[[', '[')
+					history = str(_get_klines(exchange, coin, tf_choices[inder])).replace(']]', '], ').replace('[[', '[')
 					break
 				except Exception as e:
 					time.sleep(3.5)
@@ -1039,7 +1063,7 @@ def step_coin(sym: str):
 		while this_index_now < len(tf_update):
 			while True:
 				try:
-					history = str(market.get_kline(coin, tf_choices[this_index_now])).replace(']]', '], ').replace('[[', '[')
+					history = str(_get_klines(exchange, coin, tf_choices[this_index_now])).replace(']]', '], ').replace('[[', '[')
 					break
 				except Exception as e:
 					time.sleep(3.5)
