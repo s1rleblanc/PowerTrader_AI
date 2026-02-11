@@ -4576,7 +4576,6 @@ class PowerTraderHub(tk.Tk):
             _dca_levels = DEFAULT_SETTINGS.get("dca_levels", [])
         dca_levels_var = tk.StringVar(value=",".join(str(x) for x in _dca_levels))
         max_dca_var = tk.StringVar(value=str(self.settings.get("max_dca_buys_per_24h", DEFAULT_SETTINGS.get("max_dca_buys_per_24h", 2))))
-        exchange_var = tk.StringVar(value=str(self.settings.get("exchange", DEFAULT_SETTINGS.get("exchange", "Binance"))))
         use_testnet_var = tk.BooleanVar(value=bool(self.settings.get("use_binance_testnet", DEFAULT_SETTINGS.get("use_binance_testnet", False))))
 
         # --- Trailing PM settings (editable; hot-reload friendly) ---
@@ -4653,8 +4652,6 @@ class PowerTraderHub(tk.Tk):
         add_row(r, "Max DCA buys / coin (rolling 24h):", max_dca_var); r += 1
 
         ttk.Label(frm, text="Exchange (data/training):").grid(row=r, column=0, sticky="w", padx=(0, 10), pady=6)
-        # Safety: ensure variable always exists even if older merges dropped declaration above
-        exchange_var = locals().get("exchange_var", tk.StringVar(value=str(self.settings.get("exchange", DEFAULT_SETTINGS.get("exchange", "Binance")))))
         exchange_combo = ttk.Combobox(
             frm,
             textvariable=exchange_var,
@@ -4792,7 +4789,6 @@ class PowerTraderHub(tk.Tk):
                 "✅ Required permissions:\n"
                 "  • Enable Read Info\n"
                 "  • Enable Spot & Margin Trading\n\n"
-                "If you plan to use Testnet mode, create Testnet API keys on Binance Testnet instead.\n\n"
                 "If you use IP restrictions on your Binance API key, allow the machine running the bot.\n\n"
                 "This wizard will save two files in the same folder as pt_hub.py:\n"
                 "  - b_key.txt    (your API Key)\n"
@@ -4951,15 +4947,6 @@ class PowerTraderHub(tk.Tk):
 
         r += 1
 
-        ttk.Label(frm, text="Binance Testnet:").grid(row=r, column=0, sticky="w", padx=(0, 10), pady=6)
-        ttk.Checkbutton(
-            frm,
-            text="Use Binance Testnet (paper trading)",
-            variable=use_testnet_var,
-        ).grid(row=r, column=1, columnspan=2, sticky="w", pady=6)
-
-        r += 1
-
         _refresh_api_status()
 
 
@@ -5059,7 +5046,6 @@ class PowerTraderHub(tk.Tk):
                 self.settings["chart_refresh_seconds"] = float(chart_refresh_var.get().strip())
                 self.settings["candles_limit"] = int(float(candles_limit_var.get().strip()))
                 self.settings["auto_start_scripts"] = bool(auto_start_var.get())
-                self.settings["exchange"] = (exchange_var.get() or "").strip() or DEFAULT_SETTINGS.get("exchange", "Binance")
                 self.settings["use_binance_testnet"] = bool(use_testnet_var.get())
                 self._save_settings()
 
