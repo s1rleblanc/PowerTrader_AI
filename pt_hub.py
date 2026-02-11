@@ -2302,6 +2302,37 @@ class PowerTraderHub(tk.Tk):
         self.lbl_last_status = ttk.Label(controls_left, text="Last status: N/A")
         self.lbl_last_status.pack(anchor="w", padx=6, pady=(0, 2))
 
+        # Quick exchange selector (visible without opening Settings)
+        exchange_row = ttk.Frame(controls_left)
+        exchange_row.pack(fill="x", padx=6, pady=(0, 6))
+
+        ttk.Label(exchange_row, text="Exchange:").pack(side="left")
+        self.quick_exchange_var = tk.StringVar(
+            value=str(self.settings.get("exchange", DEFAULT_SETTINGS.get("exchange", "Binance")))
+        )
+        self.quick_exchange_combo = ttk.Combobox(
+            exchange_row,
+            textvariable=self.quick_exchange_var,
+            values=["Binance", "KuCoin", "Robinhood"],
+            state="readonly",
+            width=12,
+        )
+        self.quick_exchange_combo.pack(side="left", padx=(6, 0))
+
+        def _apply_quick_exchange(*_):
+            try:
+                selected = (self.quick_exchange_var.get() or "").strip() or DEFAULT_SETTINGS.get("exchange", "Binance")
+                if str(self.settings.get("exchange", "")).strip() == selected:
+                    return
+                self.settings["exchange"] = selected
+                self._save_settings()
+                self._last_chart_refresh = 0.0
+                self._refresh_coin_dependent_ui(list(self.coins))
+            except Exception:
+                pass
+
+        self.quick_exchange_combo.bind("<<ComboboxSelected>>", _apply_quick_exchange, add="+")
+
 
         # ----------------------------
         # Training section (everything training-specific lives here)

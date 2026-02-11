@@ -168,6 +168,9 @@ def _load_gui_settings() -> dict:
 		exchange = str(data.get("exchange", _gui_settings_cache.get("exchange", "Binance"))).strip() or "Binance"
 
 		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
+		exchange = str(data.get("exchange", _gui_settings_cache.get("exchange", "Binance"))).strip() or "Binance"
+
+		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
 
 
 		_gui_settings_cache["mtime"] = mtime
@@ -315,6 +318,9 @@ def _refresh_paths_and_symbols():
 	PM_START_PCT_WITH_DCA = float(s.get("pm_start_pct_with_dca", PM_START_PCT_WITH_DCA) or PM_START_PCT_WITH_DCA)
 	if PM_START_PCT_WITH_DCA < 0.0:
 		PM_START_PCT_WITH_DCA = 0.0
+
+	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
+	EXCHANGE = str(s.get("exchange", EXCHANGE) or EXCHANGE).strip() or EXCHANGE
 
 	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
 	EXCHANGE = str(s.get("exchange", EXCHANGE) or EXCHANGE).strip() or EXCHANGE
