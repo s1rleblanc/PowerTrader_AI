@@ -39,7 +39,7 @@ _GUI_SETTINGS_PATH = os.environ.get("POWERTRADER_GUI_SETTINGS") or os.path.join(
 
 _gui_settings_cache = {
 	"mtime": None,
-	"coins": ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE', 'BCH'],  # fallback defaults
+	"coins": ['BTC', 'ETH', 'XRP', 'BNB', 'DOGE'],  # fallback defaults
 	"main_neural_dir": None,
 	"trade_start_level": 3,
 	"start_allocation_pct": 0.005,
@@ -52,7 +52,6 @@ _gui_settings_cache = {
 	"pm_start_pct_with_dca": 2.5,
 	"trailing_gap_pct": 0.5,
 	"use_binance_testnet": False,
-	"exchange": "Binance",
 }
 
 
@@ -168,6 +167,11 @@ def _load_gui_settings() -> dict:
 		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
 		exchange = str(data.get("exchange", _gui_settings_cache.get("exchange", "Binance"))).strip() or "Binance"
 
+		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
+		exchange = str(data.get("exchange", _gui_settings_cache.get("exchange", "Binance"))).strip() or "Binance"
+
+		use_binance_testnet = bool(data.get("use_binance_testnet", _gui_settings_cache.get("use_binance_testnet", False)))
+
 
 		_gui_settings_cache["mtime"] = mtime
 		_gui_settings_cache["coins"] = coins
@@ -182,7 +186,6 @@ def _load_gui_settings() -> dict:
 		_gui_settings_cache["pm_start_pct_with_dca"] = pm_start_pct_with_dca
 		_gui_settings_cache["trailing_gap_pct"] = trailing_gap_pct
 		_gui_settings_cache["use_binance_testnet"] = use_binance_testnet
-		_gui_settings_cache["exchange"] = exchange
 
 
 		return {
@@ -199,7 +202,6 @@ def _load_gui_settings() -> dict:
 			"pm_start_pct_with_dca": pm_start_pct_with_dca,
 			"trailing_gap_pct": trailing_gap_pct,
 			"use_binance_testnet": use_binance_testnet,
-			"exchange": exchange,
 		}
 
 
@@ -245,7 +247,6 @@ DCA_MULTIPLIER = 2.0
 DCA_LEVELS = [-2.5, -5.0, -10.0, -20.0, -30.0, -40.0, -50.0]
 MAX_DCA_BUYS_PER_24H = 2
 USE_BINANCE_TESTNET = False
-EXCHANGE = "Binance"
 
 # Trailing PM hot-reload globals (defaults match previous hardcoded behavior)
 TRAILING_GAP_PCT = 0.5
@@ -269,7 +270,7 @@ def _refresh_paths_and_symbols():
 	global crypto_symbols, main_dir, base_paths
 	global TRADE_START_LEVEL, START_ALLOC_PCT, DCA_MULTIPLIER, DCA_LEVELS, MAX_DCA_BUYS_PER_24H
 	global TRAILING_GAP_PCT, PM_START_PCT_NO_DCA, PM_START_PCT_WITH_DCA
-	global USE_BINANCE_TESTNET, EXCHANGE, _last_settings_mtime
+	global USE_BINANCE_TESTNET, _last_settings_mtime
 
 
 	s = _load_gui_settings()
@@ -321,6 +322,11 @@ def _refresh_paths_and_symbols():
 	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
 	EXCHANGE = str(s.get("exchange", EXCHANGE) or EXCHANGE).strip() or EXCHANGE
 
+	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
+	EXCHANGE = str(s.get("exchange", EXCHANGE) or EXCHANGE).strip() or EXCHANGE
+
+	USE_BINANCE_TESTNET = bool(s.get("use_binance_testnet", USE_BINANCE_TESTNET))
+
 
 	# Keep it safe if folder isn't real on this machine
 	if not os.path.isdir(mndir):
@@ -361,18 +367,9 @@ class CryptoAPITrading:
         # keep a copy of the folder map (same idea as trader.py)
         self.path_map = dict(base_paths)
 
-        self.exchange = EXCHANGE
-        if str(self.exchange).lower() != "binance":
-            print(
-                f"\n[PowerTrader] Trading exchange '{self.exchange}' is not supported yet. "
-                "Defaulting to Binance for trading.\n"
-            )
-            self.exchange = "Binance"
-
         self.api_key = API_KEY
         self.api_secret = API_SECRET
-        self.base_url = "https://testnet.binance.vision" if USE_BINANCE_TESTNET else "https://api.binance.com"
-        self.market_data_url = "https://api.binance.com"
+        self.base_url = "https://api.binance.com"
         self.recv_window = 5000
 
         self.dca_levels_triggered = {}  # Track DCA levels for each crypto
@@ -1138,14 +1135,7 @@ class CryptoAPITrading:
             return {"errors": [{"detail": f"HTTP {response.status_code}: {detail}"}]}
         return data
 
-    def make_api_request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[dict] = None,
-        signed: bool = False,
-        base_url: Optional[str] = None,
-    ) -> Any:
+    def make_api_request(self, method: str, path: str, params: Optional[dict] = None, signed: bool = False) -> Any:
         params = dict(params or {})
         headers = {}
 
@@ -1165,7 +1155,7 @@ class CryptoAPITrading:
         else:
             query = urlencode(params, doseq=True)
 
-        url = f"{base_url or self.base_url}{path}"
+        url = f"{self.base_url}{path}"
         try:
             if method == "GET":
                 if query:
@@ -1378,7 +1368,6 @@ class CryptoAPITrading:
                 "GET",
                 "/api/v3/ticker/bookTicker",
                 params={"symbol": binance_symbol},
-                base_url=self.market_data_url,
             )
 
             if response and isinstance(response, dict) and "askPrice" in response and "bidPrice" in response:
@@ -1698,8 +1687,6 @@ class CryptoAPITrading:
             self.path_map = dict(base_paths)
             self.dca_levels = list(DCA_LEVELS)
             self.max_dca_buys_per_24h = int(MAX_DCA_BUYS_PER_24H)
-            if str(EXCHANGE).lower() == "binance":
-                self.exchange = "Binance"
             desired_base_url = "https://testnet.binance.vision" if USE_BINANCE_TESTNET else "https://api.binance.com"
             if self.base_url != desired_base_url:
                 self.base_url = desired_base_url
